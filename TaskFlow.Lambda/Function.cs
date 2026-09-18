@@ -1,8 +1,7 @@
 using Amazon.Lambda.Core;
 using Amazon.Lambda.APIGatewayEvents;
-using Microsoft.EntityFrameworkCore;
-using System.Text.Json;
-using TaskFlow.Data;
+using TaskFlow.Lambda.Handlers;
+using TaskFlow.Lambda.Helpers;
 
 [assembly: LambdaSerializer(typeof(Amazon.Lambda.Serialization.SystemTextJson.DefaultLambdaJsonSerializer))]
 
@@ -10,88 +9,49 @@ namespace TaskFlow.Lambda;
 
 public class Function
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-    };
-
-    private static DbContextOptions<AppDbContext> BuildDbOptions()
-    {
-        return new DbContextOptionsBuilder<AppDbContext>()
-            .UseSqlServer("Server=127.0.0.1,1433;Database=TaskFlow;User Id=taskflowuser;Password=Password123!;TrustServerCertificate=True")
-            .Options;
-    }
-
     public async Task<APIGatewayHttpApiV2ProxyResponse> FunctionHandler(
         APIGatewayHttpApiV2ProxyRequest request,
         ILambdaContext context)
     {
-        context.Logger.LogInformation($"Path: {request.RawPath}, Method: {request.RequestContext.Http.Method}");
+        var method = request.RequestContext?.Http?.Method?.ToUpper() ?? "GET";
+        var path = request.RawPath ?? "/";
+
+        context.Logger.LogInformation($"→ {method} {path}");
 
         try
         {
-            var method = request.RequestContext.Http.Method.ToUpper();
-            var path = request.RawPath ?? "/";
+            // Route table
+            if (method == "GET" && path == "/health")
+                return ApiResponse.Ok(new { status = "healthy", time = DateTime.UtcNow });
 
             if (method == "GET" && path == "/tasks")
+                return await TaskHandlers.GetAll(context);
+
+            if (method == "POST" && path == "/tasks")
+                return await TaskHandlers.Create(request, context);
+
+            // Path parameters: /tasks/{id}
+            if (path.StartsWith("/tasks/"))
             {
-                return await GetTasks(context);
+                var idPart = path.Substring("/tasks/".Length);
+                if (!int.TryParse(idPart, out var id))
+                    return ApiResponse.BadRequest("Invalid task ID");
+
+                return method switch
+                {
+                    "GET" => await TaskHandlers.GetById(id, context),
+                    "PUT" => await TaskHandlers.Update(id, request, context),
+                    "DELETE" => await TaskHandlers.Delete(id, context),
+                    _ => ApiResponse.BadRequest($"Method {method} not allowed")
+                };
             }
 
-            if (method == "GET" && path == "/health")
-            {
-                return Ok(new { status = "healthy", time = DateTime.UtcNow });
-            }
-
-            return NotFound();
+            return ApiResponse.NotFound();
         }
         catch (Exception ex)
         {
-            context.Logger.LogError($"Error: {ex.Message}");
-            return new APIGatewayHttpApiV2ProxyResponse
-            {
-                StatusCode = 500,
-                Body = JsonSerializer.Serialize(new { error = ex.Message }, JsonOptions),
-                Headers = new Dictionary<string, string> { ["Content-Type"] = "application/json" }
-            };
+            context.Logger.LogError($"Unhandled error: {ex.Message}");
+            return ApiResponse.ServerError(ex.Message);
         }
     }
-
-    private static async Task<APIGatewayHttpApiV2ProxyResponse> GetTasks(ILambdaContext context)
-    {
-        using var db = new AppDbContext(BuildDbOptions());
-
-        var tasks = await db.Tasks
-            .Include(t => t.User)
-            .OrderByDescending(t => t.CreatedAt)
-            .Select(t => new
-            {
-                t.Id,
-                t.Title,
-                t.Description,
-                t.IsDone,
-                t.Priority,
-                t.DueDate,
-                t.CreatedAt,
-                UserEmail = t.User.Email
-            })
-            .ToListAsync();
-
-        context.Logger.LogInformation($"Returned {tasks.Count} tasks");
-        return Ok(tasks);
-    }
-
-    private static APIGatewayHttpApiV2ProxyResponse Ok(object body) => new()
-    {
-        StatusCode = 200,
-        Body = JsonSerializer.Serialize(body, JsonOptions),
-        Headers = new Dictionary<string, string> { ["Content-Type"] = "application/json" }
-    };
-
-    private static APIGatewayHttpApiV2ProxyResponse NotFound() => new()
-    {
-        StatusCode = 404,
-        Body = JsonSerializer.Serialize(new { error = "Not found" }),
-        Headers = new Dictionary<string, string> { ["Content-Type"] = "application/json" }
-    };
 }
