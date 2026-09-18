@@ -15,13 +15,14 @@ public static class TaskHandlers
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase
     };
 
-    // GET /tasks
-    public static async Task<APIGatewayHttpApiV2ProxyResponse> GetAll(ILambdaContext context)
+    public static async Task<APIGatewayHttpApiV2ProxyResponse> GetAll(
+        APIGatewayHttpApiV2ProxyRequest request, int userId, ILambdaContext context)
     {
         using var db = DbContextFactory.Create();
 
         var tasks = await db.Tasks
             .Include(t => t.User)
+            .Where(t => t.UserId == userId)
             .OrderByDescending(t => t.CreatedAt)
             .Select(t => new TaskDto
             {
@@ -36,18 +37,18 @@ public static class TaskHandlers
             })
             .ToListAsync();
 
-        context.Logger.LogInformation($"Returned {tasks.Count} tasks");
+        context.Logger.LogInformation($"User {userId} — returned {tasks.Count} tasks");
         return ApiResponse.Ok(tasks);
     }
 
-    // GET /tasks/{id}
-    public static async Task<APIGatewayHttpApiV2ProxyResponse> GetById(int id, ILambdaContext context)
+    public static async Task<APIGatewayHttpApiV2ProxyResponse> GetById(
+        int id, int userId, ILambdaContext context)
     {
         using var db = DbContextFactory.Create();
 
         var task = await db.Tasks
             .Include(t => t.User)
-            .Where(t => t.Id == id)
+            .Where(t => t.Id == id && t.UserId == userId)
             .Select(t => new TaskDto
             {
                 Id = t.Id,
@@ -66,10 +67,8 @@ public static class TaskHandlers
         return ApiResponse.Ok(task);
     }
 
-    // POST /tasks
     public static async Task<APIGatewayHttpApiV2ProxyResponse> Create(
-        APIGatewayHttpApiV2ProxyRequest request,
-        ILambdaContext context)
+        APIGatewayHttpApiV2ProxyRequest request, int userId, ILambdaContext context)
     {
         var body = JsonSerializer.Deserialize<CreateTaskRequest>(request.Body ?? "{}", JsonOptions);
 
@@ -78,13 +77,9 @@ public static class TaskHandlers
 
         using var db = DbContextFactory.Create();
 
-        // For now, assign to first user (auth comes Day 6)
-        var user = await db.Users.FirstOrDefaultAsync();
-        if (user is null) return ApiResponse.BadRequest("No user exists");
-
         var task = new TaskItem
         {
-            UserId = user.Id,
+            UserId = userId,
             Title = body.Title,
             Description = body.Description,
             Priority = body.Priority,
@@ -94,23 +89,19 @@ public static class TaskHandlers
         db.Tasks.Add(task);
         await db.SaveChangesAsync();
 
-        context.Logger.LogInformation($"Created task {task.Id}");
-
+        context.Logger.LogInformation($"Created task {task.Id} for user {userId}");
         return ApiResponse.Created(new { id = task.Id, title = task.Title });
     }
 
-    // PUT /tasks/{id}
     public static async Task<APIGatewayHttpApiV2ProxyResponse> Update(
-        int id,
-        APIGatewayHttpApiV2ProxyRequest request,
-        ILambdaContext context)
+        int id, APIGatewayHttpApiV2ProxyRequest request, int userId, ILambdaContext context)
     {
         var body = JsonSerializer.Deserialize<UpdateTaskRequest>(request.Body ?? "{}", JsonOptions);
         if (body is null) return ApiResponse.BadRequest("Invalid body");
 
         using var db = DbContextFactory.Create();
 
-        var task = await db.Tasks.FirstOrDefaultAsync(t => t.Id == id);
+        var task = await db.Tasks.FirstOrDefaultAsync(t => t.Id == id && t.UserId == userId);
         if (task is null) return ApiResponse.NotFound($"Task {id} not found");
 
         if (body.Title is not null) task.Title = body.Title;
@@ -125,12 +116,12 @@ public static class TaskHandlers
         return ApiResponse.Ok(new { id = task.Id, title = task.Title, isDone = task.IsDone });
     }
 
-    // DELETE /tasks/{id}
-    public static async Task<APIGatewayHttpApiV2ProxyResponse> Delete(int id, ILambdaContext context)
+    public static async Task<APIGatewayHttpApiV2ProxyResponse> Delete(
+        int id, int userId, ILambdaContext context)
     {
         using var db = DbContextFactory.Create();
 
-        var task = await db.Tasks.FirstOrDefaultAsync(t => t.Id == id);
+        var task = await db.Tasks.FirstOrDefaultAsync(t => t.Id == id && t.UserId == userId);
         if (task is null) return ApiResponse.NotFound($"Task {id} not found");
 
         db.Tasks.Remove(task);

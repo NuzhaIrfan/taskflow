@@ -20,17 +20,29 @@ public class Function
 
         try
         {
-            // Route table
+            // Public routes
             if (method == "GET" && path == "/health")
                 return ApiResponse.Ok(new { status = "healthy", time = DateTime.UtcNow });
 
+            if (method == "POST" && path == "/auth/register")
+                return await AuthHandlers.Register(request, context);
+
+            if (method == "POST" && path == "/auth/login")
+                return await AuthHandlers.Login(request, context);
+
+            // Protected routes — require JWT
+            var userId = JwtHelper.ValidateTokenAndGetUserId(JwtHelper.GetAuthHeader(request));
+            if (userId is null)
+                return ApiResponse.Unauthorized("Missing or invalid token");
+
+            var uid = userId.Value;
+
             if (method == "GET" && path == "/tasks")
-                return await TaskHandlers.GetAll(context);
+                return await TaskHandlers.GetAll(request, uid, context);
 
             if (method == "POST" && path == "/tasks")
-                return await TaskHandlers.Create(request, context);
+                return await TaskHandlers.Create(request, uid, context);
 
-            // Path parameters: /tasks/{id}
             if (path.StartsWith("/tasks/"))
             {
                 var idPart = path.Substring("/tasks/".Length);
@@ -39,9 +51,9 @@ public class Function
 
                 return method switch
                 {
-                    "GET" => await TaskHandlers.GetById(id, context),
-                    "PUT" => await TaskHandlers.Update(id, request, context),
-                    "DELETE" => await TaskHandlers.Delete(id, context),
+                    "GET" => await TaskHandlers.GetById(id, uid, context),
+                    "PUT" => await TaskHandlers.Update(id, request, uid, context),
+                    "DELETE" => await TaskHandlers.Delete(id, uid, context),
                     _ => ApiResponse.BadRequest($"Method {method} not allowed")
                 };
             }
