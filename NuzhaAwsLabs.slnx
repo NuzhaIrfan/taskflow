@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="HelloLambda/HelloLambda.csproj" />
+  <Project Path="TaskFlow.Data/TaskFlow.Data.csproj" />
+  <Project Path="TaskFlow.Lambda/TaskFlow.Lambda.csproj" />
+</Solution>
