@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-export const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:5050';
+export const API_BASE = import.meta.env.VITE_API_BASE || 'https://rvdbsec5zh.execute-api.us-east-1.amazonaws.com';
 
 export const api = axios.create({
   baseURL: API_BASE,
