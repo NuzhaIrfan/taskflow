@@ -5,9 +5,9 @@ namespace TaskFlow.Lambda.Helpers;
 
 public static class DbContextFactory
 {
-    // Later this moves to Lambda environment variables
+    // RDS SQL Server in us-east-1 (production database)
     private const string ConnectionString =
-        "Server=127.0.0.1,1433;Database=TaskFlow;User Id=taskflowuser;Password=Password123!;TrustServerCertificate=True";
+        "Server=taskflow-db.ck9aois6ed9u.us-east-1.rds.amazonaws.com,1433;Database=TaskFlow;User Id=admin;Password=TaskFlow2026!;TrustServerCertificate=True;Encrypt=False";
 
     public static AppDbContext Create()
     {
