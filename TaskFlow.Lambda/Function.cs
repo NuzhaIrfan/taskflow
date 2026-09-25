@@ -19,7 +19,11 @@ public class Function
         context.Logger.LogInformation($"→ {method} {path}");
 
         try
-        {
+        {  
+
+            // CORS preflight
+            if (method == "OPTIONS")
+                return ApiResponse.Ok(new { });
             // Public routes
             if (method == "GET" && path == "/health")
                 return ApiResponse.Ok(new { status = "healthy", time = DateTime.UtcNow });
